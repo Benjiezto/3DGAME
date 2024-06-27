@@ -9,9 +9,12 @@ public class PlayerMovement : MonoBehaviour
     public float jumpForce;          // 跳躍力道
     public float jumpCooldown;       // 設定要幾秒後才能向上跳躍
     public float groundDrag;         // 地面的減速
+    public float airMultiplier;      // 在空中的加乘速度，如果設定為0就代表不能飛，建議這個值要小於1
+    public float runSpeed;           // 跑步速度
 
     [Header("按鍵綁定")]
     public KeyCode jumpKey = KeyCode.Space;
+    public KeyCode accelerateKey = KeyCode.LeftShift;
 
     [Header("基本設定")]
     public Transform PlayerCamera;   // 攝影機
@@ -24,10 +27,9 @@ public class PlayerMovement : MonoBehaviour
     private bool readyToJump;        // 設定是否可以跳躍
     private float horizontalInput;   // 左右方向按鍵的數值(-1 <= X <= +1)
     private float verticalInput;     // 上下方向按鍵的數值(-1 <= Y <= +1)
-
     private Vector3 moveDirection;   // 移動方向
-
     private Rigidbody rbFirstPerson; // 第一人稱物件(膠囊體)的剛體
+    private float accelerateSpeed;   // 用來切換跑步速度的變數
 
     private void Start()
     {
@@ -40,11 +42,8 @@ public class PlayerMovement : MonoBehaviour
     {
         MyInput();
         SpeedControl();   // 偵測速度，過快就減速
-        DetectGround();  // 射出一條看不到的射線，來判斷有沒有打到地面？
-    }
 
-    void DetectGround()
-    {        
+        // 射出一條看不到的射線，來判斷有沒有打到地面？
         grounded = Physics.Raycast(transform.position, Vector3.down, playerHeight * 0.5f + 0.3f, whatIsGround);
         Debug.DrawRay(transform.position, new Vector3(0, -(playerHeight * 0.5f + 0.3f), 0), Color.red); // 在測試階段將射線設定為紅色線條，來看看線條長度夠不夠？
         // 如果碰到地板，就設定一個反作用力(這個可以製造人物移動的減速感)
@@ -66,12 +65,18 @@ public class PlayerMovement : MonoBehaviour
         verticalInput = Input.GetAxisRaw("Vertical");
 
         // 如果按下設定的跳躍按鍵
-        if (Input.GetKey(jumpKey) && grounded)
+        if (Input.GetKeyDown(jumpKey) && readyToJump && grounded)
         {
             readyToJump = false;
             Jump();
             Invoke(nameof(ResetJump), jumpCooldown); // 如果跳躍過後，就會依照設定的限制時間倒數，時間到了才能往上跳躍
         }
+
+        // 跑步加速
+        if (Input.GetKey(accelerateKey))
+            accelerateSpeed = runSpeed;
+        else
+            accelerateSpeed = 1.0f;
     }
 
     private void MovePlayer()
@@ -79,9 +84,15 @@ public class PlayerMovement : MonoBehaviour
         // 計算移動方向(其實就是計算X軸與Z軸兩個方向的力量)
         moveDirection = PlayerCamera.forward * verticalInput + PlayerCamera.right * horizontalInput;
 
-        // 如果在地面，則可以移動
+        // 如果在地面，移動方式為普通移動
         if (grounded)
-            rbFirstPerson.AddForce(moveDirection.normalized * moveSpeed * 10f, ForceMode.Force);
+        {
+            moveDirection = new Vector3(moveDirection.x, 0, moveDirection.z);
+            rbFirstPerson.AddForce(moveDirection.normalized * moveSpeed * 10f * accelerateSpeed, ForceMode.Force);
+        }
+        // 如果不在地面，則移動速度還可以乘上一個在空中的加乘數字，可以製造人物一跳往上飛的超人飛行效果
+        else if (!grounded)
+            rbFirstPerson.AddForce(moveDirection.normalized * moveSpeed * 10f * airMultiplier, ForceMode.Force);
     }
 
     // 方法：偵測速度並減速
